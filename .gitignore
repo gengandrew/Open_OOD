@@ -1,0 +1,15 @@
+*/__pycache__/
+/__pycache__/
+/checkpoints/
+/lottery_ticket/
+/datasets/ood_datasets/
+/datasets/cifar10/
+/datasets/mnist/
+/datasets/resnet_vae/
+/runs/
+/gradients/
+/gradients2/
+/gradients_original/
+test.py
+test_vae.py
+/fig/

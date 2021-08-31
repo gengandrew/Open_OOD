@@ -1,0 +1,18 @@
+*********************************************
+- augment -> False
+- batch_size -> 128
+- bottleneck -> True
+- droprate -> 0.0
+- epochs -> 100
+- gpu -> 0
+- growth -> 12
+- in_dataset -> CIFAR-10
+- lr -> 0.1
+- model_arch -> resnet_18
+- momentum -> 0.9
+- name -> resnet
+- print_freq -> 50
+- random_seed -> 1
+- reduce -> 0.5
+- weight_decay -> 0.0001
+*********************************************
