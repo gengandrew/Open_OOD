@@ -8,19 +8,12 @@ import numpy as np
 
 parser = argparse.ArgumentParser(description='Pytorch Detecting Out-of-distribution examples in neural networks')
 parser.add_argument('--in-dataset', default="CIFAR-10", type=str, help='in-distribution dataset')
-parser.add_argument('--saved_form', default="list", type=str, help='format of saved result')
-parser.add_argument('--base-dir', default='output/ood_scores', type=str, help='result directory')
-parser.add_argument('--epsilon', default=8, type=int, help='epsilon')
+parser.add_argument('--out-dataset', default="dtd", type=str, help='out-distribution dataset')
+parser.add_argument('--method', default='msp', type=str, help='ood detection method')
 parser.add_argument('--gpu', default='0', type=str, help='which gpu to use')
-parser.add_argument('--dataset', default="dtd", type=str, help='distribution dataset')
-parser.add_argument('--score', default="min", type=str, help='scoring function used')
+parser.add_argument('--random_seed', default=1, type=int, help='The seed used for torch & numpy')
 parser.add_argument('--name', required=True, type=str, help='name of experiment')
-parser.set_defaults(argument=True)
-
-parser.add_argument('--root_dir', type=str)
-
-np.random.seed(1)
-
+parser.set_defaults(argument=False)
 
 def parse_original_form(index):
     def get_data_from_load(unparsed_data):
@@ -289,6 +282,41 @@ def compute_traditional_ood(all_dataset):
 
     return
 
+def compute_msp_metrics(args):
+    print('Natural OOD')
+    print('nat_in vs. nat_out')
+    
+    in_directory = "./evaluation/{name}/{in_dataset}/".format(name=args.name, in_dataset=args.in_dataset)
+    out_directory = "./evaluation/{name}/{out_dataset}/".format(name=args.name, out_dataset=args.out_dataset)
+    known = np.loadtxt(in_directory + "in_scores.txt", delimiter='\n')
+    novel = np.loadtxt(out_directory + "out_scores.txt", delimiter='\n')
+    # known = np.loadtxt('{base_dir}/{in_dataset}/{method}/{name}/nat/in_scores.txt'.format(base_dir=base_dir, in_dataset=in_dataset, method=method, name=name), delimiter='\n')
+
+    known_sorted = np.sort(known)
+    num_k = known.shape[0]
+    threshold = known_sorted[round(0.05 * num_k)]
+
+    in_cond = (novel>threshold).astype(np.float32)
+    results = cal_metric(known, novel)
+
+    mtypes = ['FPR', 'DTERR', 'AUROC', 'AUIN', 'AUOUT']
+    print('in_distribution: ' + args.in_dataset)
+    print('out_distribution: '+ args.out_dataset)
+    print('Model Name: ' + args.name)
+    print('')
+    print(' OOD detection method: ' + args.method)
+    
+    for mtype in mtypes:
+        print(' {mtype:6s}'.format(mtype=mtype), end='')
+    
+    print('\n{val:6.2f}'.format(val=100.*results['FPR']), end='')
+    print(' {val:6.2f}'.format(val=100.*results['DTERR']), end='')
+    print(' {val:6.2f}'.format(val=100.*results['AUROC']), end='')
+    print(' {val:6.2f}'.format(val=100.*results['AUIN']), end='')
+    print(' {val:6.2f}\n'.format(val=100.*results['AUOUT']), end='')
+    print('')
+
+    return
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -299,39 +327,13 @@ if __name__ == '__main__':
     print_args = print_args + '\n' + '*'*45
     print(print_args)
 
+    # Setting up gpu parameters
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    if args.saved_form == 'norm_single':
-        for index in range(0, 20):
-            print("Evaluation at layer index [{index}]".format(index=index))
-            in_data = parse_gradient_L2_dict(args.name, args.score, "CIFAR-10", index)
-            out_data = parse_gradient_L2_dict(args.name, args.score, args.dataset, index)
-            all_dataset = [in_data, out_data]
-            compute_traditional_ood(all_dataset)
-    elif args.saved_form == 'original':
-        for index in range(0, 20):
-            print("Evaluation at layer index [{index}]".format(index=index))
-            (in_distribution, dtd, iSUN, LSUN, LSUN_resize) = parse_original_form(index)
-            compute_traditional_ood(in_distribution, dtd, iSUN, LSUN, LSUN_resize)
-    elif args.saved_form == 'original_single':
-        for index in range(0, 20):
-            print("Evaluation at layer index [{index}]".format(index=index))
-            in_data = parse_original_single_form(args.name, "CIFAR-10", index)
-            out_data = parse_original_single_form(args.name, args.dataset, index)
-            all_dataset = [in_data, out_data]
-            compute_traditional_ood(all_dataset)
+    # Setting up random seeds
+    torch.manual_seed(args.random_seed)
+    torch.cuda.manual_seed(args.random_seed)
+    np.random.seed(args.random_seed)
 
-    elif args.saved_form == 'layer_wise':
-        names, in_data = parse_layer_wise_gradient_norm(args.root_dir, args.name, args.score, "CIFAR-10")
-        _, out_data = parse_layer_wise_gradient_norm(args.root_dir, args.name, args.score, args.dataset)
-        for index in range(0, 20):
-            print("Evaluation at layer index [{index}]".format(index=index))
-            all_dataset = [in_data[names[index]], out_data[names[index]]]
-            compute_traditional_ood(all_dataset)
-    elif args.saved_form == 'single_value':
-        print("Evaluation for {dataset}".format(dataset=args.dataset))
-        in_dataset = parse_single_value(args.root_dir, args.name, args.score, "CIFAR-10")
-        out_dataset = parse_single_value(args.root_dir, args.name, args.score, args.dataset)
-        all_dataset = [in_dataset, out_dataset]
-        compute_traditional_ood(all_dataset)
-
+    if args.method == 'msp':
+        compute_msp_metrics(args)
