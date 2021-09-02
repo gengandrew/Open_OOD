@@ -286,11 +286,10 @@ def compute_msp_metrics(args):
     print('Natural OOD')
     print('nat_in vs. nat_out')
     
-    in_directory = "./evaluation/{name}/{in_dataset}/".format(name=args.name, in_dataset=args.in_dataset)
-    out_directory = "./evaluation/{name}/{out_dataset}/".format(name=args.name, out_dataset=args.out_dataset)
+    in_directory = "./evaluation/{name}/{method}/{in_dataset}/".format(name=args.name, method=args.method, in_dataset=args.in_dataset)
+    out_directory = "./evaluation/{name}/{method}/{out_dataset}/".format(name=args.name, method=args.method, out_dataset=args.out_dataset)
     known = np.loadtxt(in_directory + "in_scores.txt", delimiter='\n')
     novel = np.loadtxt(out_directory + "out_scores.txt", delimiter='\n')
-    # known = np.loadtxt('{base_dir}/{in_dataset}/{method}/{name}/nat/in_scores.txt'.format(base_dir=base_dir, in_dataset=in_dataset, method=method, name=name), delimiter='\n')
 
     known_sorted = np.sort(known)
     num_k = known.shape[0]
@@ -335,5 +334,4 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
 
-    if args.method == 'msp':
-        compute_msp_metrics(args)
+    compute_msp_metrics(args)

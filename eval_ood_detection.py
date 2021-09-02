@@ -44,13 +44,6 @@ def get_msp_score(inputs, model):
 
     return scores
 
-# def get_msp_score(inputs, model, method_args):
-#     with torch.no_grad():
-#         outputs = model(inputs)
-#     scores = np.max(F.softmax(outputs, dim=1).detach().cpu().numpy(), axis=1)
-
-#     return scores
-
 def get_sofl_score(inputs, model, method_args):
     num_classes = method_args['num_classes']
     with torch.no_grad():
@@ -80,13 +73,9 @@ def get_atom_score(inputs, model, method_args):
 
     return scores
 
-def get_odin_score(inputs, model, method_args):
+def get_odin_score(inputs, model, temperature, magnitude):
     # Calculating the perturbation we need to add, that is,
     # the sign of gradient of cross entropy loss w.r.t. input
-
-    temper = method_args['temperature']
-    noiseMagnitude1 = method_args['magnitude']
-
     criterion = nn.CrossEntropyLoss()
     inputs = Variable(inputs, requires_grad = True)
     outputs = model(inputs)
@@ -94,7 +83,7 @@ def get_odin_score(inputs, model, method_args):
     maxIndexTemp = np.argmax(outputs.data.cpu().numpy(), axis=1)
 
     # Using temperature scaling
-    outputs = outputs / temper
+    outputs = outputs / temperature
 
     labels = Variable(torch.LongTensor(maxIndexTemp).cuda())
     loss = criterion(outputs, labels)
@@ -105,9 +94,9 @@ def get_odin_score(inputs, model, method_args):
     gradient = (gradient.float() - 0.5) * 2
 
     # Adding small perturbations to images
-    tempInputs = torch.add(inputs.data,  -noiseMagnitude1, gradient)
+    tempInputs = torch.add(inputs.data,  -magnitude, gradient)
     outputs = model(Variable(tempInputs))
-    outputs = outputs / temper
+    outputs = outputs / temperature
     # Calculating the confidence after adding perturbations
     nnOutputs = outputs.data.cpu()
     nnOutputs = nnOutputs.numpy()
@@ -171,7 +160,29 @@ def corrupt_attack(x, model, method, method_args, in_distribution, severity_leve
 
     return worst_x
 
-def eval_msp_detector(args, directory):
+def get_detector_hyperparameters(args):
+    if args.method == "odin":
+        if args.model_arch == 'densenet':
+            if args.in_dataset == "CIFAR-10":
+                return (1000.0, 0.0016)
+            elif args.in_dataset == "CIFAR-100":
+                return (1000.0, 0.0012)
+            elif args.in_dataset == "SVHN":
+                return (1000.0, 0.0006)
+        elif args.model_arch == 'resnet_18':
+            if args.in_dataset == "CIFAR-10":
+                return (1000.0, 0.0006)
+            elif args.in_dataset == "CIFAR-100":
+                return (1000.0, 0.0012)
+            elif args.in_dataset == "SVHN":
+                return (1000.0, 0.0002)
+        else:
+            assert False, 'Not supported model arch'
+    
+    return temperature, magnitude
+
+
+def eval_ood_detector(args, directory):
     ########################################In-distribution###########################################
     if args.in_dataset == "CIFAR-10":
         normalizer = transforms.Normalize((125.3/255, 123.0/255, 113.9/255), (63.0/255, 62.1/255.0, 66.7/255.0))
@@ -211,7 +222,11 @@ def eval_msp_detector(args, directory):
         curr_batch_size = images.shape[0]
 
         inputs = images
-        scores = get_msp_score(inputs, model)
+        if args.method == "odin":
+            (temperature, magnitude) = get_detector_hyperparameters(args)
+            scores = get_odin_score(inputs, model, temperature, magnitude)
+        else:
+            scores = get_msp_score(inputs, model)
 
         for score in scores:
             in_score_file.write("{}\n".format(score))
@@ -265,7 +280,11 @@ def eval_msp_detector(args, directory):
         curr_batch_size = images.shape[0]
 
         inputs = images
-        scores = get_msp_score(inputs, model)
+        if args.method == "odin":
+            (temperature, magnitude) = get_detector_hyperparameters(args)
+            scores = get_odin_score(inputs, model, temperature, magnitude)
+        else:
+            scores = get_msp_score(inputs, model)
 
         for score in scores:
             out_score_file.write("{}\n".format(score))
@@ -288,7 +307,7 @@ if __name__ == '__main__':
     print(print_args)
 
     # Creating checkpoint directory
-    directory = "./evaluation/{name}/".format(name=args.name)
+    directory = "./evaluation/{name}/{method}/".format(name=args.name, method=args.method)
     if not os.path.exists(directory):
         os.makedirs(directory)
 
@@ -306,5 +325,4 @@ if __name__ == '__main__':
     torch.cuda.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
 
-    if args.method == 'msp':
-        eval_msp_detector(args, directory)
+    eval_ood_detector(args, directory)
