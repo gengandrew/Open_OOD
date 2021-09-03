@@ -1,0 +1,14 @@
+*********************************************
+- argument -> False
+- batch_size -> 50
+- epochs -> 100
+- gpu -> 0
+- in_dataset -> CIFAR-10
+- layers -> 100
+- method -> mahalanobis
+- model_arch -> resnet_18
+- name -> resnet
+- out_dataset -> dtd
+- random_seed -> 1
+- severity_level -> 5
+*********************************************

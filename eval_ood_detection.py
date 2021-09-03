@@ -21,6 +21,8 @@ import models.gmm as gmmlib
 import numpy as np
 import time
 
+from tune_mahalanobis import tune_mahalanobis_hyperparams
+
 parser = argparse.ArgumentParser(description='Pytorch Detecting Out-of-distribution examples in neural networks')
 parser.add_argument('--in-dataset', default="CIFAR-10", type=str, help='in-distribution dataset')
 parser.add_argument('--out-dataset', default="dtd", type=str, help='out-distribution dataset')
@@ -41,35 +43,6 @@ def get_msp_score(inputs, model):
     with torch.no_grad():
         outputs = model(inputs)
     scores = np.max(F.softmax(outputs, dim=1).detach().cpu().numpy(), axis=1)
-
-    return scores
-
-def get_sofl_score(inputs, model, method_args):
-    num_classes = method_args['num_classes']
-    with torch.no_grad():
-        outputs = model(inputs)
-    scores = -F.softmax(outputs, dim=1)[:, num_classes:].sum(dim=1).detach().cpu().numpy()
-
-    return scores
-
-def get_rowl_score(inputs, model, method_args, raw_score=False):
-    num_classes = method_args['num_classes']
-    with torch.no_grad():
-        outputs = model(inputs)
-
-    if raw_score:
-        scores = -1.0 * F.softmax(outputs, dim=1)[:, num_classes].float().detach().cpu().numpy()
-    else:
-        scores = -1.0 * (outputs.argmax(dim=1)==num_classes).float().detach().cpu().numpy()
-
-    return scores
-
-def get_atom_score(inputs, model, method_args):
-    num_classes = method_args['num_classes']
-    with torch.no_grad():
-        outputs = model(inputs)
-    #scores = -F.softmax(outputs, dim=1)[:, num_classes]
-    scores = -1.0 * (F.softmax(outputs, dim=1)[:,-1]).float().detach().cpu().numpy()
 
     return scores
 
@@ -119,47 +92,6 @@ def get_mahalanobis_score(inputs, model, method_args):
 
     return scores
 
-def get_score(inputs, model, method, method_args, raw_score=False):
-    if method == "msp":
-        scores = get_msp_score(inputs, model, method_args)
-    elif method == "odin":
-        scores = get_odin_score(inputs, model, method_args)
-    elif method == "mahalanobis":
-        scores = get_mahalanobis_score(inputs, model, method_args)
-    elif method == "sofl":
-        scores = get_sofl_score(inputs, model, method_args)
-    elif method == "rowl":
-        scores = get_rowl_score(inputs, model, method_args, raw_score)
-    elif method == "atom":
-        scores = get_atom_score(inputs, model, method_args)
-
-    return scores
-
-def corrupt_attack(x, model, method, method_args, in_distribution, severity_level = 5):
-
-    x = x.detach().clone()
-
-    scores = get_score(x, model, method, method_args, raw_score=True)
-
-    worst_score = scores.copy()
-    worst_x = x.clone()
-
-    xs = gen_corruction_image(x.cpu(), severity_level)
-
-    for curr_x in xs:
-        curr_x = curr_x.cuda()
-        scores = get_score(curr_x, model, method, method_args, raw_score=True)
-
-        if in_distribution:
-            cond = scores < worst_score
-        else:
-            cond = scores > worst_score
-
-        worst_score[cond] = scores[cond]
-        worst_x[cond] = curr_x[cond]
-
-    return worst_x
-
 def get_detector_hyperparameters(args):
     if args.method == "odin":
         if args.model_arch == 'densenet':
@@ -181,7 +113,6 @@ def get_detector_hyperparameters(args):
     
     return temperature, magnitude
 
-
 def eval_ood_detector(args, directory):
     ########################################In-distribution###########################################
     if args.in_dataset == "CIFAR-10":
@@ -202,6 +133,24 @@ def eval_ood_detector(args, directory):
     model.load_state_dict(checkpoint)
     model.eval()
     model.cuda()
+
+    if args.method == 'mahalanobis':
+        sample_mean, precision, lr_weights, lr_bias, magnitude = tune_mahalanobis_hyperparams(args.name, args.in_dataset, args.model_arch)
+        regressor = LogisticRegressionCV(cv=2).fit([[0,0,0,0],[0,0,0,0],[1,1,1,1],[1,1,1,1]],[0,0,1,1])
+        regressor.coef_ = lr_weights
+        regressor.intercept_ = lr_bias
+
+        temp_x = torch.rand(2,3,32,32)
+        temp_x = Variable(temp_x).cuda()
+        temp_list = model.feature_list(temp_x)[1]
+        num_output = len(temp_list)
+
+        mahalanobis_args = dict()
+        mahalanobis_args['num_output'] = num_output
+        mahalanobis_args['sample_mean'] = sample_mean
+        mahalanobis_args['precision'] = precision
+        mahalanobis_args['magnitude'] = magnitude
+        mahalanobis_args['regressor'] = regressor
 
     print("Processing in-distribution images")
 
@@ -225,6 +174,8 @@ def eval_ood_detector(args, directory):
         if args.method == "odin":
             (temperature, magnitude) = get_detector_hyperparameters(args)
             scores = get_odin_score(inputs, model, temperature, magnitude)
+        elif args.method == 'mahalanobis':
+            scores = get_mahalanobis_score(inputs, model, mahalanobis_args)
         else:
             scores = get_msp_score(inputs, model)
 
@@ -283,6 +234,8 @@ def eval_ood_detector(args, directory):
         if args.method == "odin":
             (temperature, magnitude) = get_detector_hyperparameters(args)
             scores = get_odin_score(inputs, model, temperature, magnitude)
+        elif args.method == 'mahalanobis':
+            scores = get_mahalanobis_score(inputs, model, mahalanobis_args)
         else:
             scores = get_msp_score(inputs, model)
 

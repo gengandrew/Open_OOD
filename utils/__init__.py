@@ -7,5 +7,4 @@ from .sofl_pgd_attack import *
 from .confidence_pgd_attack import *
 from .mahalanobis_pgd_attack import *
 from .mahalanobis_lib import *
-from .gen_corruption_image import *
 from .cal_metric import *
