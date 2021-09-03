@@ -12,12 +12,12 @@ import numpy as np
 import time
 from scipy import misc
 
-def get_curve(dir_name, stypes = ['MSP', 'ODIN']):
+def get_curve(confidence_scores_in, confidence_scores_out, stypes = ['MSP', 'ODIN']):
     tp, fp = dict(), dict()
     fpr_at_tpr95 = dict()
     for stype in stypes:
-        known = np.loadtxt('{}/confidence_{}_In.txt'.format(dir_name, stype), delimiter='\n')
-        novel = np.loadtxt('{}/confidence_{}_Out.txt'.format(dir_name, stype), delimiter='\n')
+        known = confidence_scores_in
+        novel = confidence_scores_out
         known.sort()
         novel.sort()
 
@@ -55,8 +55,8 @@ def get_curve(dir_name, stypes = ['MSP', 'ODIN']):
 
     return tp, fp, fpr_at_tpr95
 
-def metric(dir_name, stypes = ['MSP', 'ODIN'], verbose=False):
-    tp, fp, fpr_at_tpr95 = get_curve(dir_name, stypes)
+def metric(confidence_scores_in, confidence_scores_out, stypes = ['MSP', 'ODIN'], verbose=False):
+    tp, fp, fpr_at_tpr95 = get_curve(confidence_scores_in, confidence_scores_out, stypes)
     results = dict()
     mtypes = ['FPR', 'AUROC', 'DTERR', 'AUIN', 'AUOUT']
     if verbose:

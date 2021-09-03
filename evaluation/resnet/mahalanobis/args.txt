@@ -10,5 +10,4 @@
 - name -> resnet
 - out_dataset -> dtd
 - random_seed -> 1
-- severity_level -> 5
 *********************************************

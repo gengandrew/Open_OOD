@@ -3,7 +3,6 @@ import argparse
 import os
 import abc
 import sys
-
 import torch
 from torch.autograd import Variable
 import torch.nn as nn
@@ -21,6 +20,7 @@ import models.gmm as gmmlib
 import numpy as np
 import time
 
+from utils import get_Mahalanobis_score
 from tune_mahalanobis import tune_mahalanobis_hyperparams
 
 parser = argparse.ArgumentParser(description='Pytorch Detecting Out-of-distribution examples in neural networks')
@@ -33,10 +33,7 @@ parser.add_argument('--gpu', default = '0', type = str, help='gpu index')
 parser.add_argument('--method', default='msp', type=str, help='ood detection method')
 parser.add_argument('--epochs', default=100, type=int, help='number of total epochs to run')
 parser.add_argument('-b', '--batch-size', default=50, type=int, help='mini-batch size')
-
-parser.add_argument('--severity-level', default=5, type=int, help='severity level')
 parser.add_argument('--layers', default=100, type=int, help='total number of layers (default: 100)')
-
 parser.set_defaults(argument=False)
 
 def get_msp_score(inputs, model):
@@ -79,6 +76,19 @@ def get_odin_score(inputs, model, temperature, magnitude):
 
     return scores
 
+# def get_mahalanobis_score(inputs, model, method_args):
+#     num_classes = method_args['num_classes']
+#     sample_mean = method_args['sample_mean']
+#     precision = method_args['precision']
+#     magnitude = method_args['magnitude']
+#     regressor = method_args['regressor']
+#     num_output = method_args['num_output']
+
+#     Mahalanobis_scores = get_Mahalanobis_score(inputs, model, num_classes, sample_mean, precision, num_output, magnitude)
+#     scores = -regressor.predict_proba(Mahalanobis_scores)[:, 1]
+
+#     return scores
+
 def get_mahalanobis_score(inputs, model, method_args):
     num_classes = method_args['num_classes']
     sample_mean = method_args['sample_mean']
@@ -89,7 +99,6 @@ def get_mahalanobis_score(inputs, model, method_args):
 
     Mahalanobis_scores = get_Mahalanobis_score(inputs, model, num_classes, sample_mean, precision, num_output, magnitude)
     scores = -regressor.predict_proba(Mahalanobis_scores)[:, 1]
-
     return scores
 
 def get_detector_hyperparameters(args):
@@ -119,8 +128,7 @@ def eval_ood_detector(args, directory):
         normalizer = transforms.Normalize((125.3/255, 123.0/255, 113.9/255), (63.0/255, 62.1/255.0, 66.7/255.0))
         testset = torchvision.datasets.CIFAR10(root='./datasets/cifar10', train=False, download=True, transform=transforms.Compose([transforms.ToTensor()]))
         testloaderIn = torch.utils.data.DataLoader(testset, batch_size=args.batch_size, shuffle=True, num_workers=2)
-    
-    num_classes = 10
+        num_classes = 10
 
     if args.model_arch == 'resnet_18':
         model = model = rn.ResNet18()
@@ -135,10 +143,10 @@ def eval_ood_detector(args, directory):
     model.cuda()
 
     if args.method == 'mahalanobis':
-        sample_mean, precision, lr_weights, lr_bias, magnitude = tune_mahalanobis_hyperparams(args.name, args.in_dataset, args.model_arch)
-        regressor = LogisticRegressionCV(cv=2).fit([[0,0,0,0],[0,0,0,0],[1,1,1,1],[1,1,1,1]],[0,0,1,1])
-        regressor.coef_ = lr_weights
-        regressor.intercept_ = lr_bias
+        sample_mean, precision, regressor, magnitude = tune_mahalanobis_hyperparams(args.name, args.in_dataset, args.model_arch)
+        # regressor = LogisticRegressionCV(cv=2).fit([[0,0,0,0],[0,0,0,0],[1,1,1,1],[1,1,1,1]],[0,0,1,1])
+        # regressor.coef_ = lr_weights
+        # regressor.intercept_ = lr_bias
 
         temp_x = torch.rand(2,3,32,32)
         temp_x = Variable(temp_x).cuda()
@@ -146,6 +154,7 @@ def eval_ood_detector(args, directory):
         num_output = len(temp_list)
 
         mahalanobis_args = dict()
+        mahalanobis_args['num_classes'] = num_classes
         mahalanobis_args['num_output'] = num_output
         mahalanobis_args['sample_mean'] = sample_mean
         mahalanobis_args['precision'] = precision

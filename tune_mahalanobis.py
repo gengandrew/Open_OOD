@@ -209,10 +209,11 @@ def tune_mahalanobis_hyperparams(name, in_dataset, model_arch, epochs=100, batch
             count += batch_size
             print("{:4}/{:4} images processed.".format(count, m))
 
-        results = metric(save_dir, stypes)
+        results = metric(np.array(confidence_scores_in), np.array(confidence_scores_out), stypes)
         print_results(results, stypes)
         fpr = results['mahalanobis']['FPR']
         if fpr < best_fpr:
+            print("regressor updated")
             best_fpr = fpr
             best_magnitude = magnitude
             best_regressor = regressor
@@ -220,4 +221,4 @@ def tune_mahalanobis_hyperparams(name, in_dataset, model_arch, epochs=100, batch
     print('Best Logistic Regressor params:', best_regressor.coef_, best_regressor.intercept_)
     print('Best magnitude', best_magnitude)
 
-    return sample_mean, precision, best_regressor.coef_, best_regressor.intercept_, best_magnitude
+    return sample_mean, precision, best_regressor, best_magnitude
