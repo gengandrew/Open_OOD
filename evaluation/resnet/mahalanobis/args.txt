@@ -8,6 +8,6 @@
 - method -> mahalanobis
 - model_arch -> resnet_18
 - name -> resnet
-- out_dataset -> dtd
+- out_dataset -> rfc
 - random_seed -> 1
 *********************************************

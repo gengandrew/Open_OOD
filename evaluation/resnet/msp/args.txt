@@ -8,7 +8,6 @@
 - method -> msp
 - model_arch -> resnet_18
 - name -> resnet
-- out_dataset -> dtd
+- out_dataset -> rfc
 - random_seed -> 1
-- severity_level -> 5
 *********************************************

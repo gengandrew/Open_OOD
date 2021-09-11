@@ -19,6 +19,8 @@ import models.resnet18 as rn
 import models.gmm as gmmlib
 import numpy as np
 import time
+import matplotlib.pyplot as plt
+from random import randrange
 
 from utils import get_Mahalanobis_score
 from tune_mahalanobis import tune_mahalanobis_hyperparams
@@ -35,6 +37,46 @@ parser.add_argument('--epochs', default=100, type=int, help='number of total epo
 parser.add_argument('-b', '--batch-size', default=50, type=int, help='mini-batch size')
 parser.add_argument('--layers', default=100, type=int, help='total number of layers (default: 100)')
 parser.set_defaults(argument=False)
+
+def shift_distribution(inputs, shift):
+    inputs = inputs.cpu()
+    if shift == 'rotation':
+        rotater = transforms.RandomRotation(degrees=(0, 180))
+        rotated_inputs = [transforms.ToTensor()(rotater(transforms.ToPILImage()(input))) for input in inputs]
+        rotated_inputs = torch.stack(rotated_inputs)
+        return rotated_inputs.cuda()
+    elif shift == 'flip':
+        horizontalflipper = transforms.RandomHorizontalFlip(p=0.5)
+        verticalflipper = transforms.RandomVerticalFlip(p=0.5)
+        flipped_inputs = [transforms.ToTensor()(verticalflipper(horizontalflipper(transforms.ToPILImage()(input)))) for input in inputs]
+        flipped_inputs = torch.stack(flipped_inputs)
+        return flipped_inputs.cuda()
+    elif shift == 'crop':
+        cropper = transforms.RandomCrop(size=(24, 24))
+        padder = transforms.Pad(padding=8)
+        cropped_inputs = [transforms.ToTensor()(padder(cropper(transforms.ToPILImage()(input)))) for input in inputs]
+        cropped_inputs = torch.stack(cropped_inputs)
+        return cropped_inputs.cuda()
+    elif shift == 'rfc':
+        rotater = transforms.RandomRotation(degrees=(0, 180))
+        horizontalflipper = transforms.RandomHorizontalFlip(p=0.5)
+        verticalflipper = transforms.RandomVerticalFlip(p=0.5)
+        cropper = transforms.RandomCrop(size=(24, 24))
+        padder = transforms.Pad(padding=8)
+
+        rfc_inputs = []
+        for input in inputs:
+            pli_input = transforms.ToPILImage()(input)
+            pli_input = rotater(pli_input)
+            pli_input = verticalflipper(horizontalflipper(pli_input))
+            pli_input = padder(cropper(pli_input))
+            result_input = transforms.ToTensor()(pli_input)
+            rfc_inputs.append(result_input)
+
+        rfc_inputs = torch.stack(rfc_inputs)
+        return rfc_inputs.cuda()
+    else:
+        assert False, 'Not supported distribution shift: {}'.format(shift)
 
 def get_msp_score(inputs, model):
     with torch.no_grad():
@@ -75,19 +117,6 @@ def get_odin_score(inputs, model, temperature, magnitude):
     scores = np.max(nnOutputs, axis=1)
 
     return scores
-
-# def get_mahalanobis_score(inputs, model, method_args):
-#     num_classes = method_args['num_classes']
-#     sample_mean = method_args['sample_mean']
-#     precision = method_args['precision']
-#     magnitude = method_args['magnitude']
-#     regressor = method_args['regressor']
-#     num_output = method_args['num_output']
-
-#     Mahalanobis_scores = get_Mahalanobis_score(inputs, model, num_classes, sample_mean, precision, num_output, magnitude)
-#     scores = -regressor.predict_proba(Mahalanobis_scores)[:, 1]
-
-#     return scores
 
 def get_mahalanobis_score(inputs, model, method_args):
     num_classes = method_args['num_classes']
@@ -215,7 +244,15 @@ def eval_ood_detector(args, directory):
 
     out_score_file = open(os.path.join(out_directory, "out_scores.txt"), 'w')
 
-    if args.out_dataset == 'SVHN':
+    if args.out_dataset == 'rotation' or args.out_dataset == 'flip' or args.out_dataset == 'crop' or args.out_dataset == 'rfc':
+        testsetout = torchvision.datasets.CIFAR10(root='./datasets/cifar10', train=False, download=True, transform=transforms.Compose([transforms.ToTensor()]))
+        testloaderOut = torch.utils.data.DataLoader(testsetout, batch_size=args.batch_size, shuffle=True, num_workers=2)
+    elif args.out_dataset == 'snow':
+        ood_directory = "./datasets/ood_datasets/CIFAR-10-C/"
+        testsetout = torch.tensor(np.transpose(np.load(os.path.join(ood_directory, args.out_dataset + '.npy')), (0,3,1,2)))
+        testloaderOut = torch.utils.data.DataLoader(testsetout, batch_size=args.batch_size, shuffle=True, num_workers=2)
+        print(testloaderOut)
+    elif args.out_dataset == 'SVHN':
         testsetout = svhn.SVHN('datasets/ood_datasets/svhn/', split='test', transform=transforms.ToTensor(), download=False)
         testloaderOut = torch.utils.data.DataLoader(testsetout, batch_size=args.batch_size, shuffle=True, num_workers=2)
     elif args.out_dataset == 'dtd':
@@ -240,6 +277,9 @@ def eval_ood_detector(args, directory):
         curr_batch_size = images.shape[0]
 
         inputs = images
+        if args.out_dataset == 'rotation' or args.out_dataset == 'flip' or args.out_dataset == 'crop' or args.out_dataset == 'rfc':
+            inputs = shift_distribution(inputs, args.out_dataset)
+
         if args.method == "odin":
             (temperature, magnitude) = get_detector_hyperparameters(args)
             scores = get_odin_score(inputs, model, temperature, magnitude)
